@@ -33,6 +33,7 @@ public class CameraFaceEnrollController {
     private static final List<ResolutionProfile> KNOWN_DEVICES = new ArrayList<>();
 
     static {
+        KNOWN_DEVICES.add(new ResolutionProfile(3264,  2448, 5));
         KNOWN_DEVICES.add(new ResolutionProfile(2592, 1952, 4));
         KNOWN_DEVICES.add(new ResolutionProfile(2592, 1940, 4));
         KNOWN_DEVICES.add(new ResolutionProfile(2304, 1728, 3));
@@ -89,7 +90,24 @@ public class CameraFaceEnrollController {
                 if (mCallback != null) mCallback.onCameraError();
             }
         }, new CameraListener() {
-            @Override public void onComplete(Object value) { startConfiguredPreview(previewSurface); }
+            @Override public void onComplete(Object value) {
+                if (value instanceof Camera) {
+                    try {
+                        Camera camera = (Camera) value;
+                        Camera.Parameters params = camera.getParameters();
+
+                        params.setPreviewSize(mTargetWidth, mTargetHeight);
+                        params.setPreviewFormat(android.graphics.ImageFormat.NV21);
+
+                        camera.setParameters(params);
+                        Log.i(TAG, "Enroll Camera Parameters set to: " + mTargetWidth + "x" + mTargetHeight);
+                    } catch (Exception e) {
+                        Log.e(TAG, "Failed to set enroll camera params", e);
+                    }
+                }
+
+                startConfiguredPreview(previewSurface);
+            }
             @Override public void onError(Exception e) { if (mCallback != null) mCallback.onCameraError(); }
         });
     }
@@ -121,14 +139,22 @@ public class CameraFaceEnrollController {
                                 mProcessedBuffer = new byte[mTargetWidth * mTargetHeight * 3 / 2];
                             }
 
-                            if (mScaleFactor == 4) {
-                                downscale4xNV21(srcData, mSrcWidth, mSrcHeight, mProcessedBuffer, mTargetWidth, mTargetHeight);
-                            } else if (mScaleFactor == 3) {
-                                downscale3xNV21(srcData, mSrcWidth, mSrcHeight, mProcessedBuffer, mTargetWidth, mTargetHeight);
-                            } else if (mScaleFactor == 2) {
-                                downscale2xNV21(srcData, mSrcWidth, mSrcHeight, mProcessedBuffer, mTargetWidth, mTargetHeight);
-                            } else {
-                                cropNV21(srcData, mSrcWidth, mSrcHeight, mProcessedBuffer, mTargetWidth, mTargetHeight);
+                            switch (mScaleFactor) {
+                                case 5:
+                                    downscale5xNV21(srcData, mSrcWidth, mSrcHeight, mProcessedBuffer, mTargetWidth, mTargetHeight);
+                                    break;
+                                case 4:
+                                    downscale4xNV21(srcData, mSrcWidth, mSrcHeight, mProcessedBuffer, mTargetWidth, mTargetHeight);
+                                    break;
+                                case 3:
+                                    downscale3xNV21(srcData, mSrcWidth, mSrcHeight, mProcessedBuffer, mTargetWidth, mTargetHeight);
+                                    break;
+                                case 2:
+                                    downscale2xNV21(srcData, mSrcWidth, mSrcHeight, mProcessedBuffer, mTargetWidth, mTargetHeight);
+                                    break;
+                                default:
+                                    cropNV21(srcData, mSrcWidth, mSrcHeight, mProcessedBuffer, mTargetWidth, mTargetHeight);
+                                    break;
                             }
 
                             int res = callback.handleSaveFeature(mProcessedBuffer, mTargetWidth, mTargetHeight, 90);
@@ -170,6 +196,35 @@ public class CameraFaceEnrollController {
         else mScaleFactor = 1;
 
         Log.w(TAG, "Unknown Device Detected! Estimated dimension: " + mSrcWidth + "x" + mSrcHeight + " Scale: " + mScaleFactor);
+    }
+
+    private void downscale5xNV21(byte[] src, int srcWidth, int srcHeight, byte[] dest, int dstWidth, int dstHeight) {
+        int scaledW = srcWidth / 5;
+        int scaledH = srcHeight / 5;
+        int xOffset = Math.max(0, (scaledW - dstWidth) / 2);
+        int yOffset = Math.max(0, (scaledH - dstHeight) / 2);
+
+        for (int y = 0; y < dstHeight; y++) {
+            int srcY = (y + yOffset) * 5;
+            if (srcY >= srcHeight) break;
+            for (int x = 0; x < dstWidth; x++) {
+                int srcX = (x + xOffset) * 5;
+                dest[y * dstWidth + x] = src[srcY * srcWidth + srcX];
+            }
+        }
+        int uvSrcStart = srcWidth * srcHeight;
+        int uvDstStart = dstWidth * dstHeight;
+        for (int y = 0; y < dstHeight / 2; y++) {
+            int srcY = (y + yOffset / 2) * 5;
+            if (srcY >= srcHeight / 2) break;
+            for (int x = 0; x < dstWidth; x += 2) {
+                int srcX = (x + xOffset / 2) * 5;
+                int srcIndex = uvSrcStart + srcY * srcWidth + srcX;
+                int dstIndex = uvDstStart + y * dstWidth + x;
+                dest[dstIndex] = src[srcIndex];
+                dest[dstIndex + 1] = src[srcIndex + 1];
+            }
+        }
     }
 
     private void downscale4xNV21(byte[] src, int srcWidth, int srcHeight, byte[] dest, int dstWidth, int dstHeight) {

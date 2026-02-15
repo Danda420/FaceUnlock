@@ -10,6 +10,7 @@ import ax.nd.faceunlock.vendor.FacePPImpl;
 import ax.nd.faceunlock.camera.CameraFaceEnrollController;
 import ax.nd.faceunlock.camera.CameraFaceAuthController;
 import ax.nd.faceunlock.camera.CameraService;
+import ax.nd.faceunlock.camera.listeners.CameraListener;
 import ax.nd.faceunlock.util.Util; 
 
 import java.lang.reflect.Field;
@@ -93,49 +94,65 @@ public class FaceAuthBridge {
         mEnrollFinished = false;
         mEngineSuccess = false;
         mCurrentSteps = TOTAL_STEPS;
-        
+
         mHandler.post(() -> {
             try {
-                forceReleaseCamera();
-                try { Thread.sleep(150); } catch (Exception e) {}
-                notifyEnrollResult(receiverObject, 0, userId, TOTAL_STEPS);
-                mFacePP.saveFeatureStart();
-                CameraFaceEnrollController.getInstance(mContext).start(new CameraFaceEnrollController.CameraCallback() {
-                    byte[] mFeature = new byte[10000]; 
-                    byte[] mFaceData = new byte[40000];
-                    int[] mOutId = new int[1];
-                    @Override public int handleSaveFeature(byte[] data, int width, int height, int angle) {
-                        if (mEnrollFinished || mEngineSuccess) return 0;
-                        return mFacePP.saveFeature(data, width, height, angle, true, mFeature, mFaceData, mOutId);
+                CameraService.closeCamera(new CameraListener() {
+                    @Override
+                    public void onComplete(Object value) {
+                        mHandler.post(() -> {
+                            try {
+                                notifyEnrollResult(receiverObject, 0, userId, TOTAL_STEPS);
+                                mFacePP.saveFeatureStart();
+                                CameraFaceEnrollController.getInstance(mContext).start(new CameraFaceEnrollController.CameraCallback() {
+                                    byte[] mFeature = new byte[10000];
+                                    byte[] mFaceData = new byte[40000];
+                                    int[] mOutId = new int[1];
+                                    @Override public int handleSaveFeature(byte[] data, int width, int height, int angle) {
+                                        if (mEnrollFinished || mEngineSuccess) return 0;
+                                        return mFacePP.saveFeature(data, width, height, angle, true, mFeature, mFaceData, mOutId);
+                                    }
+                                    @Override public void handleSaveFeatureResult(int res) {
+                                        if (mEnrollFinished || mEngineSuccess) return;
+                                        if (res == MG_UNLOCK_OK) {
+                                            mEngineSuccess = true;
+                                            int finalFaceId = (mOutId[0] <= 0) ? 1 : mOutId[0];
+                                            mPendingFaceId = finalFaceId;
+                                            Log.i(TAG, "Enrollment successful. ID assigned: " + finalFaceId);
+                                            runProgressAnimation(receiverObject, userId);
+                                            return;
+                                        }
+                                        long now = System.currentTimeMillis();
+                                        if (now - mLastUpdateTime < 100) return;
+                                        mLastUpdateTime = now;
+                                        int info = -1;
+                                        if (res == MG_UNLOCK_KEEP) {
+                                            if (mCurrentSteps > 5) {
+                                                mCurrentSteps--;
+                                                notifyEnrollResult(receiverObject, 0, userId, mCurrentSteps);
+                                            }
+                                            info = FACE_ACQUIRED_GOOD;
+                                        }
+                                        if (info != -1) notifyAcquired(receiverObject, userId, info, 0);
+                                    }
+                                    @Override public void onFaceDetected() {}
+                                    @Override public void onTimeout() { if(!mEngineSuccess) { stopEnroll(); notifyError(receiverObject, 3, 0); } }
+                                    @Override public void onCameraError() { if(!mEngineSuccess) { stopEnroll(); notifyError(receiverObject, 1, 0); } }
+                                    @Override public void setDetectArea(android.hardware.Camera.Size size) { mFacePP.setDetectArea(0, 0, size.height, size.width); }
+                                }, FRONT_CAMERA_ID, previewSurface);
+                            } catch (Throwable t) {
+                                forceReleaseCamera();
+                                notifyError(receiverObject, 1, 0);
+                            }
+                        });
                     }
-                    @Override public void handleSaveFeatureResult(int res) {
-                        if (mEnrollFinished || mEngineSuccess) return;
-                        if (res == MG_UNLOCK_OK) { 
-                            mEngineSuccess = true;
-                            int finalFaceId = (mOutId[0] <= 0) ? 1 : mOutId[0];
-                            mPendingFaceId = finalFaceId;
-                            Log.i(TAG, "Enrollment successful. ID assigned: " + finalFaceId);
-                            runProgressAnimation(receiverObject, userId);
-                            return;
-                        }
-                        long now = System.currentTimeMillis();
-                        if (now - mLastUpdateTime < 100) return;
-                        mLastUpdateTime = now;
-                        int info = -1;
-                        if (res == MG_UNLOCK_KEEP) {
-                             if (mCurrentSteps > 5) {
-                                 mCurrentSteps--;
-                                 notifyEnrollResult(receiverObject, 0, userId, mCurrentSteps);
-                             }
-                             info = FACE_ACQUIRED_GOOD;
-                        }
-                        if (info != -1) notifyAcquired(receiverObject, userId, info, 0);
+
+                    @Override
+                    public void onError(Exception e) {
+                        Log.e(TAG, "Failed to cleanly release camera for enrollment.", e);
+                        mHandler.post(() -> notifyError(receiverObject, 1, 0));
                     }
-                    @Override public void onFaceDetected() {}
-                    @Override public void onTimeout() { if(!mEngineSuccess) { stopEnroll(); notifyError(receiverObject, 3, 0); } }
-                    @Override public void onCameraError() { if(!mEngineSuccess) { stopEnroll(); notifyError(receiverObject, 1, 0); } }
-                    @Override public void setDetectArea(android.hardware.Camera.Size size) { mFacePP.setDetectArea(0, 0, size.height, size.width); }
-                }, FRONT_CAMERA_ID, previewSurface); 
+                });
             } catch (Throwable t) {
                 forceReleaseCamera();
                 notifyError(receiverObject, 1, 0);
@@ -181,26 +198,42 @@ public class FaceAuthBridge {
         Log.d(TAG, "Authentication requested. Sensor: " + sensorId + ", User: " + userId);
         mHandler.post(() -> {
             try {
-                forceReleaseCamera(); 
-                try { Thread.sleep(100); } catch (Exception e) {}
-                mFacePP.compareStart();
-                mAuthController = new CameraFaceAuthController(mContext, new CameraFaceAuthController.ServiceCallback() {
+                CameraService.closeCamera(new CameraListener() {
                     @Override
-                    public int handlePreviewData(byte[] data, int width, int height) {
-                        int[] scores = new int[20];
-                        int res = mFacePP.compare(data, width, height, 0, true, true, scores);
-                        if (res == 0) { 
-                            Log.i(TAG, "Authentication successful. Triggering unlock.");
-                            stopAuthenticateInternal(); 
-                            notifyAuthenticated(receiverObject, sensorId, 1, userId); 
-                        }
-                        return res;
+                    public void onComplete(Object value) {
+                        mHandler.post(() -> {
+                            try {
+                                mFacePP.compareStart();
+                                mAuthController = new CameraFaceAuthController(mContext, new CameraFaceAuthController.ServiceCallback() {
+                                    @Override
+                                    public int handlePreviewData(byte[] data, int width, int height) {
+                                        int[] scores = new int[20];
+                                        int res = mFacePP.compare(data, width, height, 0, true, true, scores);
+                                        if (res == 0) {
+                                            Log.i(TAG, "Authentication successful. Triggering unlock.");
+                                            stopAuthenticateInternal();
+                                            notifyAuthenticated(receiverObject, sensorId, 1, userId);
+                                        }
+                                        return res;
+                                    }
+                                    @Override public void setDetectArea(android.hardware.Camera.Size size) { mFacePP.setDetectArea(0, 0, size.height, size.width); }
+                                    @Override public void onTimeout(boolean b) { stopAuthenticateInternal(); notifyError(receiverObject, 3, 0); }
+                                    @Override public void onCameraError() { stopAuthenticateInternal(); notifyError(receiverObject, 1, 0); }
+                                });
+                                mAuthController.start(FRONT_CAMERA_ID, mDummySurface);
+                            } catch (Throwable t) {
+                                forceReleaseCamera();
+                                notifyError(receiverObject, 1, 0);
+                            }
+                        });
                     }
-                    @Override public void setDetectArea(android.hardware.Camera.Size size) { mFacePP.setDetectArea(0, 0, size.height, size.width); }
-                    @Override public void onTimeout(boolean b) { stopAuthenticateInternal(); notifyError(receiverObject, 3, 0); }
-                    @Override public void onCameraError() { stopAuthenticateInternal(); notifyError(receiverObject, 1, 0); }
+
+                    @Override
+                    public void onError(Exception e) {
+                        Log.e(TAG, "Failed to cleanly release camera. Aborting auth.", e);
+                        mHandler.post(() -> notifyError(receiverObject, 1, 0));
+                    }
                 });
-                mAuthController.start(FRONT_CAMERA_ID, mDummySurface); 
             } catch (Throwable t) {
                 forceReleaseCamera();
                 notifyError(receiverObject, 1, 0);
