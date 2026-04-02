@@ -17,6 +17,13 @@ To integrate these files into your ROM, you need to copy the contents of the `sy
    ```plaintext
    /vendor/bin/hw/android\.hardware\.biometrics\.face-service u:object_r:hal_allocator_default_exec:s0
    ```
+   If you're using this in oplus ROMs (OxygenOS,ColorOS,RealmeUI) add this to any .cil selinux file (preferrably vendor_sepolicy.cil):
+   ```plaintext
+   (allow hal_allocator_default system_server (binder (call)))
+   (allow hal_allocator_default debug_prop (property_service (set)))
+   (allow hal_allocator_default face_vendor_data_file (dir (search write getattr open create add_name remove_name)))
+   (allow hal_allocator_default face_vendor_data_file (file (getattr open read write create unlink)))
+   ```
    You might need to address additional denials. And you can do it by:
    ```bash
    adb shell dmesg | grep "permissive=0"
