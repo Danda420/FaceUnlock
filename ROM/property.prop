@@ -1,0 +1,6 @@
+# ADD THESE TO ANY build.prop
+
+ro.oemports10t.facehal=true
+
+# FOR DEBUGGING (change it to "true")
+persist.sys.facehal.verbose=false

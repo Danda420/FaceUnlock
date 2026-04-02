@@ -1,0 +1,24 @@
+##/*************************************************************
+## ** File: - android.hardware.biometrics.face-service.rc
+## ** ANDROID_HW_BIOMETRICS_FACE
+## ** Copyright (C), 2026, OemPorts10T 
+## ** 
+## ** Description : 1.0
+## **           This is a common file 
+## ** 
+## ** Version: 1.0
+## ** Date created: 10:30, 2026/03/31
+## ** Author: dandagaharu77@gmail.com
+## ** 
+## ** ------------------ Revision History: ---------------------
+## **      <author>        <date>                    <desc>
+## **      Danda420        10:30, 2026/03/31         init
+## *************************************************************/
+
+on post-fs-data
+    mkdir /data/vendor_de/0/facedata 0770 system system encryption=None
+
+service vendor.face-hal-service /vendor/bin/hw/android.hardware.biometrics.face-service
+    class hal
+    user system
+    group system input

@@ -1,55 +1,25 @@
 # AutoPatcher
 
-- Patches **`services.jar`** and/or **`SystemUI.apk`**
-- Uses **APKEditor.jar** under the hood
-- Applies predefined patches located in the `faceunlock/` directory
-- Optional debug mode for verbose logs (incase SystemUI wont compile cz it needs additional treatments like removing some duplicate/invalid resources)
+The AutoPatcher is a utility designed to inject the necessary FaceUnlock service hooks into the Android framework by patching your system's `services.jar`.
 
----
+## How It Works
+The `patchFU` shell script decompiles the target `services.jar` using `APKEditor.jar`. It searches for `FaceService.smali` and `FaceProvider.smali` to automatically inject the `startService` execution method. It also attempts to optionally patch the `scheduleEnroll` method to properly register the preview surface. Finally, it merges the custom `faceunlock/classes.dex` into the jar and recompiles it.
 
-## Requirements
+## Guide To Use It
 
-- Linux (or WSL)
-- Java
+**Prerequisites:**
+* Java installed (required for `APKEditor.jar`).
+* A Linux/Bash environment.
 
-## Usage
-
-### Patch `services.jar`
-
+**Usage:**
+Run the `patchFU` script, providing the path to the `services.jar` you wish to modify as the first argument:
 ```bash
-./patchFU -j services.jar
+./patchFU <path_to_service.jar>
 ```
 
-### Patch `SystemUI.apk`
-
-```bash
-./patchFU -a SystemUI.apk
-```
-
-You must provide the target file path as the argument.
-
----
-
-## Debug mode
-
-To enable verbose logging, create an empty file named `.debug` in the current directory:
-
-```bash
+**Debugging:**
+If the patch fails or you want to see detailed output from the decompilation and recompilation process, you can enable debug mode. Simply create an empty file named .debug in the same directory as the script before running it.
 touch .debug
+```bash
+./patchFU <path_to_service.jar>
 ```
-
-Remove it to disable debug output.
-
----
-
-## Notes / Warnings
-
-- Always **back up your original files** before patching incase it gets cooked
-- Results may vary depending on ROM version and Android release
-
----
-
-## Troubleshooting
-
-- Make sure Java is installed and accessible (`java -version`)
-- Run with debug mode enabled if something fails (SystemUI/services unable to compile properly or smth)

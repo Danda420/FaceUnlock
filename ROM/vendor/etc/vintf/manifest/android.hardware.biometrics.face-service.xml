@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+/*************************************************************
+ ** ANDROID_HW_BIOMETRICS_FACE
+ ** Copyright (C), 2026, OemPorts10T 
+ **
+ ** Description : 1.0
+ **           This is a common file
+ **
+ ** Version: 1.0
+ ** Date created: 10:30, 2026/03/31
+ ** Author: dandagaharu77@gmail.com
+ **
+ *************************************************************/
+-->
+<manifest version="1.0" type="device">
+    <hal format="aidl">
+        <name>android.hardware.biometrics.face</name>
+        <version>1</version>
+        <interface>
+            <name>IFace</name>
+            <instance>default</instance>
+        </interface>
+    </hal>
+</manifest>
